@@ -13,7 +13,7 @@ import (
 	"time"
 
 	"github.com/PuerkitoBio/goquery"
-	"github.com/bmaupin/go-epub"
+	"github.com/go-shiori/go-epub"
 	"github.com/gocolly/colly/v2"
 )
 
@@ -49,13 +49,13 @@ func main() {
 	hostname := parsedURL.Hostname()
 
 	// Initialize the collector
-	c := colly.NewCollector(
+	collector := colly.NewCollector(
 		colly.MaxDepth(*maxDepth),
 		colly.Async(true),
 	)
 
 	// Set up parallel processing
-	c.Limit(&colly.LimitRule{
+	collector.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 4,
 		Delay:       1 * time.Second,
@@ -73,11 +73,11 @@ func main() {
 	defer os.RemoveAll(tempDir)
 
 	// Set up the callback for when a page is visited
-	c.OnHTML("html", func(e *colly.HTMLElement) {
+	collector.OnHTML("html", func(e *colly.HTMLElement) {
 		// Skip if not on the same host and sameHostOnly is true
 		pageURL := e.Request.URL.String()
 		currentHostname := e.Request.URL.Hostname()
-		
+
 		if *sameHostOnly && currentHostname != hostname {
 			return
 		}
@@ -96,17 +96,19 @@ func main() {
 		// Extract the main content
 		// This is a simplistic approach - you might want to use something more sophisticated
 		var contentBuilder strings.Builder
-		
+
 		// Add article/main content if it exists
-		article := e.DOM.Find("article, main, .content, #content")
+		article := e.DOM.Find("article")
 		if article.Length() > 0 {
+			// Remove unwanted elements from article content
+			article.Find("script, footer, iframe, .nav, .menu, .sidebar, .ad, .ads").Remove()
 			content, _ := article.First().Html()
 			contentBuilder.WriteString(content)
 		} else {
 			// Fallback to body content with some cleaning
 			e.DOM.Find("body").Each(func(i int, s *goquery.Selection) {
 				// Remove scripts, styles, nav, etc.
-				s.Find("script, style, nav, header, footer, .nav, .menu, .sidebar, .ad, .ads").Remove()
+				s.Find("script, style, nav, header, footer, iframe, .nav, .menu, .sidebar, .ad, .ads").Remove()
 				content, _ := s.Html()
 				contentBuilder.WriteString(content)
 			})
@@ -115,7 +117,7 @@ func main() {
 		// Create an HTML file for this page
 		fileName := fmt.Sprintf("page_%d.html", pageOrder)
 		filePath := path.Join(tempDir, fileName)
-		
+
 		htmlContent := fmt.Sprintf(`<!DOCTYPE html>
 <html>
 <head>
@@ -126,7 +128,7 @@ func main() {
     %s
 </body>
 </html>`, title, contentBuilder.String())
-		
+
 		err := os.WriteFile(filePath, []byte(htmlContent), 0644)
 		if err != nil {
 			log.Printf("Error writing HTML file for %s: %v", pageURL, err)
@@ -144,7 +146,7 @@ func main() {
 		pageOrder++
 
 		// Find and visit all links on the page
-		e.DOM.Find("a[href]").Each(func(i int, s *goquery.Selection) {
+		e.DOM.Find("a[href].list-tile").Each(func(i int, s *goquery.Selection) {
 			link, exists := s.Attr("href")
 			if !exists {
 				return
@@ -169,8 +171,8 @@ func main() {
 
 			// Skip common file types that aren't HTML
 			ext := strings.ToLower(path.Ext(linkURL.Path))
-			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" || 
-			   ext == ".pdf" || ext == ".zip" || ext == ".mp3" || ext == ".mp4" {
+			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" ||
+				ext == ".pdf" || ext == ".zip" || ext == ".mp3" || ext == ".mp4" {
 				return
 			}
 
@@ -179,19 +181,22 @@ func main() {
 	})
 
 	// Set up error handling
-	c.OnError(func(r *colly.Response, err error) {
+	collector.OnError(func(r *colly.Response, err error) {
 		log.Printf("Error visiting %s: %v", r.Request.URL, err)
 	})
 
 	// Start crawling
 	fmt.Printf("Starting crawl at %s (max depth: %d)\n", *startURL, *maxDepth)
-	c.Visit(*startURL)
+	collector.Visit(*startURL)
 
 	// Wait for all requests to finish
-	c.Wait()
+	collector.Wait()
 
 	// Create the EPUB book
-	book := epub.NewEpub(fmt.Sprintf("Content from %s", hostname))
+	book, err := epub.NewEpub(fmt.Sprintf("Content from %s", hostname))
+	if err != nil {
+		log.Fatal("Error creating EPUB:", err)
+	}
 	book.SetAuthor("Web Crawler")
 	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s", hostname, time.Now().Format("2006-01-02")))
 
