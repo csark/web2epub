@@ -1,6 +1,12 @@
 package main
 
+//TODO: Look at different logging packages - logrus, zap, zerolog
+//TODO: Look at pulling a better header image from the available options "srcset"
+//TODO: Generate better ebook name
+//TODO: Pull images during crawl, then use updated src path for the ebook insertion
+
 import (
+	"crypto/rand"
 	"flag"
 	"fmt"
 	"io"
@@ -19,11 +25,10 @@ import (
 
 // PageContent stores the extracted content from a web page
 type PageContent struct {
-	URL      string
-	Title    string
-	Content  string
-	Order    int
-	FilePath string
+	URL     string
+	Title   string
+	Content *goquery.Selection
+	Order   int
 }
 
 func main() {
@@ -94,54 +99,28 @@ func main() {
 		}
 
 		// Extract the main content
-		// This is a simplistic approach - you might want to use something more sophisticated
-		var contentBuilder strings.Builder
-
 		// Add article/main content if it exists
 		article := e.DOM.Find("article")
 		if article.Length() > 0 {
 			// Remove unwanted elements from article content
-			article.Find("script, footer, iframe, .nav, .menu, .sidebar, .ad, .ads").Remove()
-			content, _ := article.First().Html()
-			contentBuilder.WriteString(content)
+			article.Find("script, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
+
 		} else {
+			log.Print("'article' element not found, falling back to generic content discovery...")
 			// Fallback to body content with some cleaning
 			e.DOM.Find("body").Each(func(i int, s *goquery.Selection) {
-				// Remove scripts, styles, nav, etc.
-				s.Find("script, style, nav, header, footer, iframe, .nav, .menu, .sidebar, .ad, .ads").Remove()
-				content, _ := s.Html()
-				contentBuilder.WriteString(content)
+				// Remove scripts, styles, nav, etc. .fbfDMV - timestamp on header image
+				s.Find("script, style, nav, header, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
+				article = s
 			})
-		}
-
-		// Create an HTML file for this page
-		fileName := fmt.Sprintf("page_%d.html", pageOrder)
-		filePath := path.Join(tempDir, fileName)
-
-		htmlContent := fmt.Sprintf(`<!DOCTYPE html>
-<html>
-<head>
-    <title>%s</title>
-    <meta charset="utf-8">
-</head>
-<body>
-    %s
-</body>
-</html>`, title, contentBuilder.String())
-
-		err := os.WriteFile(filePath, []byte(htmlContent), 0644)
-		if err != nil {
-			log.Printf("Error writing HTML file for %s: %v", pageURL, err)
-			return
 		}
 
 		// Store the page content
 		pages[pageURL] = &PageContent{
-			URL:      pageURL,
-			Title:    title,
-			Content:  contentBuilder.String(),
-			Order:    pageOrder,
-			FilePath: filePath,
+			URL:     pageURL,
+			Title:   title,
+			Content: article,
+			Order:   pageOrder,
 		}
 		pageOrder++
 
@@ -209,7 +188,30 @@ func main() {
 	// Add each page to the EPUB
 	for _, page := range sortedPages {
 		// Create a section in the EPUB
-		_, err := book.AddSection(page.Content, page.Title, "", "")
+		var contentBuilder strings.Builder
+
+		// Find all of the img tags in the article
+		page.Content.Find("img").Each(func(i int, s *goquery.Selection) {
+			imgURL, exists := s.Attr("src")
+			if exists {
+				output_path, err := downloadImage(imgURL, tempDir)
+				if err != nil {
+					log.Printf("Error downloading image %s: %v", imgURL, err)
+				}
+				ebook_path, err := book.AddImage(output_path, "")
+				if err != nil {
+					log.Fatal("Error processing image:", err)
+				}
+
+				// Create a new img tag with just the src attribute
+				newImg := fmt.Sprintf(`<img src="%s">`, ebook_path)
+				s.ReplaceWithHtml(newImg)
+			}
+		})
+		content, _ := page.Content.First().Html()
+		contentBuilder.WriteString(content)
+
+		_, err := book.AddSection(contentBuilder.String(), page.Title, "", "")
 		if err != nil {
 			log.Printf("Error adding section for %s: %v", page.URL, err)
 		}
@@ -235,12 +237,14 @@ func downloadImage(imageURL, dir string) (string, error) {
 	}
 	defer resp.Body.Close()
 
-	// Create a file with the image name
-	parsedURL, _ := url.Parse(imageURL)
-	filename := path.Base(parsedURL.Path)
-	if filename == "" || filename == "." {
-		filename = fmt.Sprintf("image_%d.jpg", time.Now().UnixNano())
-	}
+	// Create a file with a random name
+	// Generate 16 random bytes
+	b := make([]byte, 16)
+	rand.Read(b)
+	// Convert to hex string and add .jpg extension
+	filename := fmt.Sprintf("%x", b)
+
+	// log.Printf("Filename: %s", filename)
 
 	filepath := path.Join(dir, filename)
 	file, err := os.Create(filepath)
