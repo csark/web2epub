@@ -5,6 +5,7 @@ package main
 //TODO: Generate better ebook name
 //TODO: Pull images during crawl, then use updated src path for the ebook insertion
 //TODO: Header and kicker text formatting in ebook should be updated
+//TODO: Fix article order
 
 import (
 	"crypto/rand"
