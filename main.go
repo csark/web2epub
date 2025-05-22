@@ -4,6 +4,7 @@ package main
 //TODO: Look at pulling a better header image from the available options "srcset"
 //TODO: Generate better ebook name
 //TODO: Pull images during crawl, then use updated src path for the ebook insertion
+//TODO: Header and kicker text formatting in ebook should be updated
 
 import (
 	"crypto/rand"
