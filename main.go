@@ -3,9 +3,7 @@ package main
 //TODO: Look at different logging packages - logrus, zap, zerolog
 //TODO: Look at pulling a better header image from the available options "srcset"
 //TODO: Generate better ebook name
-//TODO: Pull images during crawl, then use updated src path for the ebook insertion
 //TODO: Header and kicker text formatting in ebook should be updated
-//TODO: Fix article order
 
 import (
 	"crypto/rand"
@@ -29,6 +27,7 @@ import (
 type PageContent struct {
 	URL     string
 	Title   string
+	Author  string
 	Content *goquery.Selection
 	Order   int
 }
@@ -136,7 +135,7 @@ func main() {
 	pageCollector.Limit(&colly.LimitRule{
 		DomainGlob:  "*",
 		Parallelism: 6,
-		Delay:       5 * time.Second,
+		Delay:       3 * time.Second,
 	})
 
 	// Set up the callback for page processing
@@ -158,6 +157,20 @@ func main() {
 			title = fmt.Sprintf("Page %d", pageOrder+1)
 		}
 
+		author := e.DOM.Find(".author-name").Text()
+		if author == "" {
+			author = "General Authority"
+		} else {
+			replacer := strings.NewReplacer(
+				"By", "",
+				"President", "",
+				"Elder", "",
+				"Sister", "",
+				"Brother", "",
+			)
+			author = replacer.Replace(author)
+		}
+
 		// Extract the main content
 		article := e.DOM.Find("article")
 		if article.Length() > 0 {
@@ -173,10 +186,25 @@ func main() {
 			})
 		}
 
+		// Download images in the goroutine
+		e.DOM.Find("img").Each(func(i int, s *goquery.Selection) {
+			imgURL, exists := s.Attr("src")
+			if exists {
+				output_path, err := downloadImage(imgURL, tempDir)
+				if err != nil {
+					log.Printf("Error downloading image %s: %v", imgURL, err)
+				}
+				// Create a new img tag with just the src attribute
+				newImg := fmt.Sprintf(`<img src="%s">`, output_path)
+				s.ReplaceWithHtml(newImg)
+			}
+		})
+
 		// Store the page content
 		pages[pageURL] = &PageContent{
 			URL:     pageURL,
 			Title:   title,
+			Author:  author,
 			Content: article,
 			Order:   pageOrder,
 		}
@@ -217,17 +245,12 @@ func main() {
 
 		// Find all of the img tags in the article
 		page.Content.Find("img").Each(func(i int, s *goquery.Selection) {
-			imgURL, exists := s.Attr("src")
+			tmp_path, exists := s.Attr("src")
 			if exists {
-				output_path, err := downloadImage(imgURL, tempDir)
-				if err != nil {
-					log.Printf("Error downloading image %s: %v", imgURL, err)
-				}
-				ebook_path, err := book.AddImage(output_path, "")
+				ebook_path, err := book.AddImage(tmp_path, "")
 				if err != nil {
 					log.Fatal("Error processing image:", err)
 				}
-
 				// Create a new img tag with just the src attribute
 				newImg := fmt.Sprintf(`<img src="%s">`, ebook_path)
 				s.ReplaceWithHtml(newImg)
@@ -236,12 +259,14 @@ func main() {
 		content, _ := page.Content.First().Html()
 		contentBuilder.WriteString(content)
 
-		_, err := book.AddSection(contentBuilder.String(), page.Title, "", "")
+		title := fmt.Sprintf("%s - %s", page.Title, page.Author)
+
+		_, err := book.AddSection(contentBuilder.String(), title, "", "")
 		if err != nil {
 			log.Printf("Error adding section for %s: %v", page.URL, err)
 		}
 
-		fmt.Printf("Added page: %s\n", page.Title)
+		fmt.Printf("Added page: %s\n", title)
 	}
 
 	// Save the EPUB file
