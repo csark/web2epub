@@ -37,7 +37,8 @@ func main() {
 	// Define command line flags
 	startURL := flag.String("url", "", "Starting URL to crawl (required)")
 	outputFile := flag.String("output", "output.epub", "Output EPUB file name")
-	maxDepth := flag.Int("depth", 1, "Maximum crawl depth")
+	// Does not support user definable maxDepth at this time
+	//maxDepth := flag.Int("depth", 1, "Maximum crawl depth")
 	sameHostOnly := flag.Bool("same-host", true, "Only crawl pages on the same host")
 	flag.Parse()
 
@@ -55,78 +56,32 @@ func main() {
 	}
 	hostname := parsedURL.Hostname()
 
-	// Initialize the collector
-	collector := colly.NewCollector(
-		colly.MaxDepth(*maxDepth),
-		colly.Async(true),
-	)
-
-	// Set up parallel processing
-	collector.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 4,
-		Delay:       1 * time.Second,
-	})
-
 	// Store the collected pages
 	pages := make(map[string]*PageContent)
-	pageOrder := 0
 
-	// Create a temporary directory for HTML files
+	// Create a temporary directory for resource files
 	tempDir, err := os.MkdirTemp("", "epub-builder")
 	if err != nil {
 		log.Fatal("Failed to create temp directory:", err)
 	}
 	defer os.RemoveAll(tempDir)
 
-	// Set up the callback for when a page is visited
-	collector.OnHTML("html", func(e *colly.HTMLElement) {
-		// Skip if not on the same host and sameHostOnly is true
-		pageURL := e.Request.URL.String()
-		currentHostname := e.Request.URL.Hostname()
+	// First, collect all links in order
+	type LinkInfo struct {
+		URL   string
+		Order int
+	}
+	var links []LinkInfo
+	linkOrder := 0
 
-		if *sameHostOnly && currentHostname != hostname {
-			return
-		}
+	// Create a collector just for discovering links
+	linkCollector := colly.NewCollector(
+		colly.MaxDepth(0),
+	)
 
-		// Skip if already processed
-		if _, exists := pages[pageURL]; exists {
-			return
-		}
-
-		// Extract the title
-		title := e.DOM.Find("title").Text()
-		if title == "" {
-			title = fmt.Sprintf("Page %d", pageOrder+1)
-		}
-
-		// Extract the main content
-		// Add article/main content if it exists
-		article := e.DOM.Find("article")
-		if article.Length() > 0 {
-			// Remove unwanted elements from article content
-			article.Find("script, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
-
-		} else {
-			log.Print("'article' element not found, falling back to generic content discovery...")
-			// Fallback to body content with some cleaning
-			e.DOM.Find("body").Each(func(i int, s *goquery.Selection) {
-				// Remove scripts, styles, nav, etc. .fbfDMV - timestamp on header image
-				s.Find("script, style, nav, header, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
-				article = s
-			})
-		}
-
-		// Store the page content
-		pages[pageURL] = &PageContent{
-			URL:     pageURL,
-			Title:   title,
-			Content: article,
-			Order:   pageOrder,
-		}
-		pageOrder++
-
-		// Find and visit all links on the page
+	// Set up the callback for link discovery
+	linkCollector.OnHTML("html", func(e *colly.HTMLElement) {
+		// Find and collect all links on the page
 		e.DOM.Find("a[href].list-tile").Each(func(i int, s *goquery.Selection) {
 			link, exists := s.Attr("href")
 			if !exists {
@@ -157,21 +112,89 @@ func main() {
 				return
 			}
 
-			e.Request.Visit(link)
+			// Store the link with its order
+			links = append(links, LinkInfo{
+				URL:   link,
+				Order: linkOrder,
+			})
+			linkOrder++
 		})
 	})
 
+	// Start link discovery
+	fmt.Printf("Discovering links at %s\n", *startURL)
+	linkCollector.Visit(*startURL)
+	linkCollector.Wait()
+
+	// Now process the pages in parallel while preserving order
+	pageCollector := colly.NewCollector(
+		colly.MaxDepth(0), // We already have all links, no need to crawl further
+		colly.Async(true),
+	)
+
+	// Set up parallel processing
+	pageCollector.Limit(&colly.LimitRule{
+		DomainGlob:  "*",
+		Parallelism: 6,
+		Delay:       5 * time.Second,
+	})
+
+	// Set up the callback for page processing
+	pageCollector.OnHTML("html", func(e *colly.HTMLElement) {
+		pageURL := e.Request.URL.String()
+
+		// Find the order of this page in our links list
+		var pageOrder int
+		for _, link := range links {
+			if link.URL == pageURL {
+				pageOrder = link.Order
+				break
+			}
+		}
+
+		// Extract the title
+		title := e.DOM.Find("title").Text()
+		if title == "" {
+			title = fmt.Sprintf("Page %d", pageOrder+1)
+		}
+
+		// Extract the main content
+		article := e.DOM.Find("article")
+		if article.Length() > 0 {
+			// Remove unwanted elements from article content
+			article.Find("script, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
+		} else {
+			log.Print("'article' element not found, falling back to generic content discovery...")
+			// Fallback to body content with some cleaning
+			e.DOM.Find("body").Each(func(i int, s *goquery.Selection) {
+				// Remove scripts, styles, nav, etc. .fbfDMV - timestamp on header image
+				s.Find("script, style, nav, header, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
+				article = s
+			})
+		}
+
+		// Store the page content
+		pages[pageURL] = &PageContent{
+			URL:     pageURL,
+			Title:   title,
+			Content: article,
+			Order:   pageOrder,
+		}
+	})
+
 	// Set up error handling
-	collector.OnError(func(r *colly.Response, err error) {
+	pageCollector.OnError(func(r *colly.Response, err error) {
 		log.Printf("Error visiting %s: %v", r.Request.URL, err)
 	})
 
-	// Start crawling
-	fmt.Printf("Starting crawl at %s (max depth: %d)\n", *startURL, *maxDepth)
-	collector.Visit(*startURL)
+	// Process all discovered links
+	fmt.Printf("Processing %d discovered pages\n", len(links))
+	for _, link := range links {
+		pageCollector.Visit(link.URL)
+	}
 
-	// Wait for all requests to finish
-	collector.Wait()
+	// Wait for all pages to be processed
+	pageCollector.Wait()
 
 	// Create the EPUB book
 	book, err := epub.NewEpub(fmt.Sprintf("Content from %s", hostname))
