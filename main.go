@@ -1,8 +1,6 @@
 package main
 
 //TODO: Look at different logging packages - logrus, zap, zerolog
-//TODO: Generate better ebook name
-//TODO: User epub AddSection and AddSubSection appropriately to generate better table of contents
 
 import (
 	"crypto/rand"
@@ -24,11 +22,12 @@ import (
 
 // PageContent stores the extracted content from a web page
 type PageContent struct {
-	URL     string
-	Title   string
-	Author  string
-	Content *goquery.Selection
-	Order   int
+	URL          string
+	Title        string
+	Author       string
+	Content      *goquery.Selection
+	Order        int
+	isSubSection bool
 }
 
 func main() {
@@ -192,6 +191,14 @@ func main() {
 			})
 		}
 
+		isSubSection := true
+		// Check if page is a section heading
+		contentLength := len(article.Text())
+		// log.Printf("Content length is: %d", contentLength)
+		if contentLength < 100 {
+			isSubSection = false
+		}
+
 		// Download images in the goroutine
 		e.DOM.Find("img").Each(func(i int, s *goquery.Selection) {
 			imgURL, exists := s.Attr("src")
@@ -208,11 +215,12 @@ func main() {
 
 		// Store the page content
 		pages[pageURL] = &PageContent{
-			URL:     pageURL,
-			Title:   title,
-			Author:  author,
-			Content: article,
-			Order:   pageOrder,
+			URL:          pageURL,
+			Title:        title,
+			Author:       author,
+			Content:      article,
+			Order:        pageOrder,
+			isSubSection: isSubSection,
 		}
 	})
 
@@ -265,7 +273,7 @@ p.kicker {
 	}
 	book.SetTitle(bookTitle)
 	book.SetAuthor("Church of Jesus Christ of Latter-day Saints")
-	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epud", hostname, time.Now().Format("2006-01-02")))
+	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epub", hostname, time.Now().Format("2006-01-02")))
 	cssPath, err = book.AddCSS(cssPath, "")
 	if err != nil {
 		log.Fatal("Error adding CSS:", err)
@@ -276,6 +284,8 @@ p.kicker {
 	for _, page := range pages {
 		sortedPages[page.Order] = page
 	}
+
+	SectionLink := ""
 
 	// Add each page to the EPUB
 	for _, page := range sortedPages {
@@ -308,9 +318,19 @@ p.kicker {
 
 		title := fmt.Sprintf("%s - %s", page.Title, page.Author)
 
-		_, err := book.AddSection(contentBuilder.String(), title, "", cssPath)
-		if err != nil {
-			log.Printf("Error adding section for %s: %v", page.URL, err)
+		if page.isSubSection {
+			// log.Printf("Subsection")
+			_, err := book.AddSubSection(SectionLink, contentBuilder.String(), title, "", cssPath)
+			if err != nil {
+				log.Printf("Error adding subsection for %s: %v", page.URL, err)
+			}
+		} else {
+			// log.Printf("Section")
+			relativePath, err := book.AddSection(contentBuilder.String(), title, "", cssPath)
+			if err != nil {
+				log.Printf("Error adding section for %s: %v", page.URL, err)
+			}
+			SectionLink = relativePath
 		}
 
 		fmt.Printf("Added page: %s\n", title)
