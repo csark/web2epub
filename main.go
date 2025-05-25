@@ -1,6 +1,7 @@
 package main
 
 //TODO: Look at different logging packages - logrus, zap, zerolog
+//TODO: Add footnotes
 
 import (
 	"crypto/rand"
