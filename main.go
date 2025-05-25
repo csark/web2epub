@@ -1,9 +1,8 @@
 package main
 
 //TODO: Look at different logging packages - logrus, zap, zerolog
-//TODO: Look at pulling a better header image from the available options "srcset"
 //TODO: Generate better ebook name
-//TODO: Header and kicker text formatting in ebook should be updated
+//TODO: User epub AddSection and AddSubSection appropriately to generate better table of contents
 
 import (
 	"crypto/rand"
@@ -35,7 +34,8 @@ type PageContent struct {
 func main() {
 	// Define command line flags
 	startURL := flag.String("url", "", "Starting URL to crawl (required)")
-	outputFile := flag.String("output", "output.epub", "Output EPUB file name")
+	outputFile := flag.String("output", "", "Will grab title from title of first page unless this flag is specified")
+	coverImg := flag.String("cover", "", "URL of desired cover image. Defaults to no cover image")
 	// Does not support user definable maxDepth at this time
 	//maxDepth := flag.Int("depth", 1, "Maximum crawl depth")
 	sameHostOnly := flag.Bool("same-host", true, "Only crawl pages on the same host")
@@ -70,6 +70,7 @@ func main() {
 		URL   string
 		Order int
 	}
+	bookTitle := "Default Title"
 	var links []LinkInfo
 	linkOrder := 0
 
@@ -80,6 +81,11 @@ func main() {
 
 	// Set up the callback for link discovery
 	linkCollector.OnHTML("html", func(e *colly.HTMLElement) {
+		bookTitle = e.DOM.Find("title").Text()
+		if bookTitle == "" {
+			bookTitle = *outputFile
+		}
+
 		// Find and collect all links on the page
 		e.DOM.Find("a[href].list-tile").Each(func(i int, s *goquery.Selection) {
 			link, exists := s.Attr("href")
@@ -224,13 +230,46 @@ func main() {
 	// Wait for all pages to be processed
 	pageCollector.Wait()
 
+	css := `h1 {
+    margin-block-end: 0.33em;
+}
+h3 {
+    margin-block-start: 0;
+    margin-block-end: 0;
+}
+p.author-name, p.author-role {
+    margin-block-start: 0;
+    margin-block-end: 0;
+}
+p {
+    margin-block-start: 0;
+    margin-block-end: 0.5em;
+}
+p.kicker {
+    font-style: italic;
+	margin-block-start: 1em;
+    margin-block-end: 2em;
+}`
+
+	// Write CSS to a file in the temp directory
+	cssPath := path.Join(tempDir, "styles.css")
+	err = os.WriteFile(cssPath, []byte(css), 0644)
+	if err != nil {
+		log.Fatal("Error writing CSS file:", err)
+	}
+
 	// Create the EPUB book
-	book, err := epub.NewEpub(fmt.Sprintf("Content from %s", hostname))
+	book, err := epub.NewEpub(bookTitle)
 	if err != nil {
 		log.Fatal("Error creating EPUB:", err)
 	}
-	book.SetAuthor("Web Crawler")
-	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s", hostname, time.Now().Format("2006-01-02")))
+	book.SetTitle(bookTitle)
+	book.SetAuthor("Church of Jesus Christ of Latter-day Saints")
+	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epud", hostname, time.Now().Format("2006-01-02")))
+	cssPath, err = book.AddCSS(cssPath, "")
+	if err != nil {
+		log.Fatal("Error adding CSS:", err)
+	}
 
 	// Sort pages by order
 	sortedPages := make([]*PageContent, len(pages))
@@ -256,12 +295,20 @@ func main() {
 				s.ReplaceWithHtml(newImg)
 			}
 		})
+
+		// Edit author attributes
+		authorName := page.Content.Find(".author-name")
+		authorName.SetHtml(fmt.Sprintf("<h3>%s</h3>", authorName.Text()))
+
+		authorRole := page.Content.Find(".author-role")
+		authorRole.SetHtml(fmt.Sprintf("<h3>%s</h3>", authorRole.Text()))
+
 		content, _ := page.Content.First().Html()
 		contentBuilder.WriteString(content)
 
 		title := fmt.Sprintf("%s - %s", page.Title, page.Author)
 
-		_, err := book.AddSection(contentBuilder.String(), title, "", "")
+		_, err := book.AddSection(contentBuilder.String(), title, "", cssPath)
 		if err != nil {
 			log.Printf("Error adding section for %s: %v", page.URL, err)
 		}
@@ -269,13 +316,26 @@ func main() {
 		fmt.Printf("Added page: %s\n", title)
 	}
 
+	//Add cover image
+	if *coverImg != "" {
+		output_path, err := downloadImage(*coverImg, tempDir)
+		if err != nil {
+			log.Printf("Error downloading cover image %s: %v", *coverImg, err)
+		}
+		ebook_path, err := book.AddImage(output_path, "")
+		if err != nil {
+			log.Fatal("Error processing cover image:", err)
+		}
+		book.SetCover(ebook_path, "")
+	}
+
 	// Save the EPUB file
-	err = book.Write(*outputFile)
+	err = book.Write(bookTitle + ".epub")
 	if err != nil {
 		log.Fatal("Error writing EPUB:", err)
 	}
 
-	fmt.Printf("\nSuccessfully created EPUB: %s\n", *outputFile)
+	fmt.Printf("\nSuccessfully created EPUB: %s\n", bookTitle)
 	fmt.Printf("Total pages: %d\n", len(pages))
 }
 
