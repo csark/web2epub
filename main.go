@@ -1,7 +1,7 @@
 package main
 
 //TODO: Look at different logging packages - logrus, zap, zerolog
-//TODO: Add footnotes
+//TODO: Add footnotes - https://ebooks.stackexchange.com/questions/109/how-can-i-put-footnotes-in-an-ebook, will have to extract the footnotes and add them as a separate section using this class name class="panelGridLayout-ZuE9Q"
 
 import (
 	"crypto/rand"
