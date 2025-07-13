@@ -251,7 +251,7 @@ p.author-name, p.author-role {
 }
 p {
     margin-block-start: 0;
-    margin-block-end: 0.5em;
+    margin-block-end: 0.75em;
 }
 p.kicker {
     font-style: italic;
