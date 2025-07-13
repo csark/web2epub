@@ -9,7 +9,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"net/url"
 	"os"
 	"path"
 	"strings"
@@ -17,24 +16,16 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-shiori/go-epub"
-	"github.com/gocolly/colly/v2"
+	"web2epub/collectors"
 )
 
-// PageContent stores the extracted content from a web page
-type PageContent struct {
-	URL          string
-	Title        string
-	Author       string
-	Content      *goquery.Selection
-	Order        int
-	isSubSection bool
-}
 
 func main() {
 	// Define command line flags
 	startURL := flag.String("url", "", "Starting URL to crawl (required)")
 	outputFile := flag.String("output", "", "Will grab title from title of first page unless this flag is specified")
 	coverImg := flag.String("cover", "", "URL of desired cover image. Defaults to no cover image")
+	module := flag.String("module", "conference", "Collection module to use (conference, scriptures, ensign)")
 	// Does not support user definable maxDepth at this time
 	//maxDepth := flag.Int("depth", 1, "Maximum crawl depth")
 	sameHostOnly := flag.Bool("same-host", true, "Only crawl pages on the same host")
@@ -47,15 +38,14 @@ func main() {
 		os.Exit(1)
 	}
 
-	// Parse the starting URL to get the host
-	parsedURL, err := url.Parse(*startURL)
+	// Get the collector configuration for the specified module
+	config, err := collectors.GetConfigByModule(*module)
 	if err != nil {
-		log.Fatal("Invalid URL:", err)
+		log.Fatal("Module configuration error:", err)
 	}
-	hostname := parsedURL.Hostname()
 
 	// Store the collected pages
-	pages := make(map[string]*PageContent)
+	pages := make(map[string]*collectors.PageContent)
 
 	// Create a temporary directory for resource files
 	tempDir, err := os.MkdirTemp("", "epub-builder")
@@ -64,179 +54,22 @@ func main() {
 	}
 	defer os.RemoveAll(tempDir)
 
-	// First, collect all links in order
-	type LinkInfo struct {
-		URL   string
-		Order int
-	}
-	bookTitle := "Default Title"
-	var links []LinkInfo
-	linkOrder := 0
-
-	// Create a collector just for discovering links
-	linkCollector := colly.NewCollector(
-		colly.MaxDepth(0),
-	)
-
-	// Set up the callback for link discovery
-	linkCollector.OnHTML("html", func(e *colly.HTMLElement) {
-		bookTitle = e.DOM.Find("title").Text()
-		if bookTitle == "" {
-			bookTitle = *outputFile
-		}
-
-		// Find and collect all links on the page
-		e.DOM.Find("a[href].list-tile").Each(func(i int, s *goquery.Selection) {
-			link, exists := s.Attr("href")
-			if !exists {
-				return
-			}
-
-			// Skip links to other domains if sameHostOnly is true
-			linkURL, err := url.Parse(link)
-			if err != nil {
-				return
-			}
-
-			// If the link is relative, make it absolute
-			if !linkURL.IsAbs() {
-				linkURL = e.Request.URL.ResolveReference(linkURL)
-				link = linkURL.String()
-			}
-
-			// Skip external links if sameHostOnly is true
-			if *sameHostOnly && linkURL.Hostname() != hostname {
-				return
-			}
-
-			// Skip common file types that aren't HTML
-			ext := strings.ToLower(path.Ext(linkURL.Path))
-			if ext == ".jpg" || ext == ".jpeg" || ext == ".png" || ext == ".gif" ||
-				ext == ".pdf" || ext == ".zip" || ext == ".mp3" || ext == ".mp4" {
-				return
-			}
-
-			// Store the link with its order
-			links = append(links, LinkInfo{
-				URL:   link,
-				Order: linkOrder,
-			})
-			linkOrder++
-		})
-	})
-
-	// Start link discovery
-	fmt.Printf("Discovering links at %s\n", *startURL)
-	linkCollector.Visit(*startURL)
-	linkCollector.Wait()
-
-	// Now process the pages in parallel while preserving order
-	pageCollector := colly.NewCollector(
-		colly.MaxDepth(0), // We already have all links, no need to crawl further
-		colly.Async(true),
-	)
-
-	// Set up parallel processing
-	pageCollector.Limit(&colly.LimitRule{
-		DomainGlob:  "*",
-		Parallelism: 6,
-		Delay:       3 * time.Second,
-	})
-
-	// Set up the callback for page processing
-	pageCollector.OnHTML("html", func(e *colly.HTMLElement) {
-		pageURL := e.Request.URL.String()
-
-		// Find the order of this page in our links list
-		var pageOrder int
-		for _, link := range links {
-			if link.URL == pageURL {
-				pageOrder = link.Order
-				break
-			}
-		}
-
-		// Extract the title
-		title := e.DOM.Find("title").Text()
-		if title == "" {
-			title = fmt.Sprintf("Page %d", pageOrder+1)
-		}
-
-		author := e.DOM.Find(".author-name").Text()
-		if author == "" {
-			author = "General Authority"
-		} else {
-			replacer := strings.NewReplacer(
-				"By", "",
-				"President", "",
-				"Elder", "",
-				"Sister", "",
-				"Brother", "",
-			)
-			author = replacer.Replace(author)
-		}
-
-		// Extract the main content
-		article := e.DOM.Find("article")
-		if article.Length() > 0 {
-			// Remove unwanted elements from article content
-			article.Find("script, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
-		} else {
-			log.Print("'article' element not found, falling back to generic content discovery...")
-			// Fallback to body content with some cleaning
-			e.DOM.Find("body").Each(func(i int, s *goquery.Selection) {
-				// Remove scripts, styles, nav, etc. .fbfDMV - timestamp on header image
-				s.Find("script, style, nav, header, footer, iframe, button, .nav, .menu, .sidebar, .ad, .ads, .fbfDMV").Remove()
-				article = s
-			})
-		}
-
-		isSubSection := true
-		// Check if page is a section heading
-		contentLength := len(article.Text())
-		// log.Printf("Content length is: %d", contentLength)
-		if contentLength < 100 {
-			isSubSection = false
-		}
-
-		// Download images in the goroutine
-		e.DOM.Find("img").Each(func(i int, s *goquery.Selection) {
-			imgURL, exists := s.Attr("src")
-			if exists {
-				output_path, err := downloadImage(imgURL, tempDir)
-				if err != nil {
-					log.Printf("Error downloading image %s: %v", imgURL, err)
-				}
-				// Create a new img tag with just the src attribute
-				newImg := fmt.Sprintf(`<img src="%s">`, output_path)
-				s.ReplaceWithHtml(newImg)
-			}
-		})
-
-		// Store the page content
-		pages[pageURL] = &PageContent{
-			URL:          pageURL,
-			Title:        title,
-			Author:       author,
-			Content:      article,
-			Order:        pageOrder,
-			isSubSection: isSubSection,
-		}
-	})
-
-	// Set up error handling
-	pageCollector.OnError(func(r *colly.Response, err error) {
-		log.Printf("Error visiting %s: %v", r.Request.URL, err)
-	})
-
-	// Process all discovered links
-	fmt.Printf("Processing %d discovered pages\n", len(links))
-	for _, link := range links {
-		pageCollector.Visit(link.URL)
+	// Use the modular collectors to discover links
+	links, bookTitle, err := collectors.CollectLinks(*startURL, config, *sameHostOnly)
+	if err != nil {
+		log.Fatal("Link collection failed:", err)
 	}
 
-	// Wait for all pages to be processed
-	pageCollector.Wait()
+	// Use custom book title if provided
+	if *outputFile != "" {
+		bookTitle = *outputFile
+	}
+
+	// Use the modular collectors to process pages
+	pages, err = collectors.CollectPages(links, config, tempDir, downloadImage)
+	if err != nil {
+		log.Fatal("Page collection failed:", err)
+	}
 
 	css := `h1 {
     margin-block-end: 0.33em;
@@ -273,14 +106,14 @@ p.kicker {
 	}
 	book.SetTitle(bookTitle)
 	book.SetAuthor("Church of Jesus Christ of Latter-day Saints")
-	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epub", hostname, time.Now().Format("2006-01-02")))
+	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epub", *startURL, time.Now().Format("2006-01-02")))
 	cssPath, err = book.AddCSS(cssPath, "")
 	if err != nil {
 		log.Fatal("Error adding CSS:", err)
 	}
 
 	// Sort pages by order
-	sortedPages := make([]*PageContent, len(pages))
+	sortedPages := make([]*collectors.PageContent, len(pages))
 	for _, page := range pages {
 		sortedPages[page.Order] = page
 	}
@@ -318,7 +151,7 @@ p.kicker {
 
 		title := fmt.Sprintf("%s - %s", page.Title, page.Author)
 
-		if page.isSubSection {
+		if page.IsSubSection {
 			// log.Printf("Subsection")
 			_, err := book.AddSubSection(SectionLink, contentBuilder.String(), title, "", cssPath)
 			if err != nil {
