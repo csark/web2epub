@@ -26,24 +26,25 @@ type LinkInfo struct {
 // CollectorConfig holds configuration for different collection strategies
 type CollectorConfig struct {
 	// Link discovery settings
-	LinkSelector     string   // CSS selector for finding links
-	TitleSelector    string   // CSS selector for page title
-	AuthorSelector   string   // CSS selector for author
-	ContentSelector  string   // CSS selector for main content
-	RemoveSelectors  []string // CSS selectors for elements to remove
-	
+	LinkSelector    string   // CSS selector for finding links
+	LinkFilter      string   // String to match in a url
+	TitleSelector   string   // CSS selector for page title
+	AuthorSelector  string   // CSS selector for author
+	ContentSelector string   // CSS selector for main content
+	RemoveSelectors []string // CSS selectors for elements to remove
+
 	// Author processing
 	AuthorReplacements map[string]string // String replacements for author names
 	DefaultAuthor      string            // Default author if none found
-	
+
 	// Content processing
 	SubSectionThreshold int  // Content length threshold for subsections
 	FallbackToBody      bool // Fall back to body if content selector fails
-	
+
 	// Crawling settings
-	Parallelism int           // Number of parallel requests
-	DelaySeconds int          // Delay between requests
-	SkipExtensions []string   // File extensions to skip
+	Parallelism    int      // Number of parallel requests
+	DelaySeconds   int      // Delay between requests
+	SkipExtensions []string // File extensions to skip
 }
 
 // GetGeneralConferenceConfig returns config for LDS General Conference pages
@@ -54,7 +55,7 @@ func GetGeneralConferenceConfig() *CollectorConfig {
 		AuthorSelector:  ".author-name",
 		ContentSelector: "article",
 		RemoveSelectors: []string{
-			"script", "footer", "iframe", "button", 
+			"script", "footer", "iframe", "button",
 			".nav", ".menu", ".sidebar", ".ad", ".ads", ".fbfDMV",
 		},
 		AuthorReplacements: map[string]string{
@@ -79,8 +80,9 @@ func GetGeneralConferenceConfig() *CollectorConfig {
 // GetScripturesConfig returns config for LDS Scripture pages
 func GetScripturesConfig() *CollectorConfig {
 	return &CollectorConfig{
-		LinkSelector:    "a[href]",
-		TitleSelector:   "title", 
+		LinkSelector:    "a[href].list-tile",
+		LinkFilter:      "illustrations",
+		TitleSelector:   "title",
 		AuthorSelector:  "",
 		ContentSelector: ".body-block",
 		RemoveSelectors: []string{
@@ -88,11 +90,11 @@ func GetScripturesConfig() *CollectorConfig {
 			".nav", ".menu", ".sidebar", ".ad", ".ads",
 			".study-notes", ".footnotes",
 		},
-		AuthorReplacements: map[string]string{},
+		AuthorReplacements:  map[string]string{},
 		DefaultAuthor:       "",
 		SubSectionThreshold: 50,
 		FallbackToBody:      true,
-		Parallelism:         4,
+		Parallelism:         6,
 		DelaySeconds:        2,
 		SkipExtensions: []string{
 			".jpg", ".jpeg", ".png", ".gif",

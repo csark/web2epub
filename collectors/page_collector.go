@@ -122,6 +122,8 @@ func CollectPages(links []LinkInfo, config *CollectorConfig, tempDir string, dow
 		log.Printf("Error visiting %s: %v", r.Request.URL, err)
 	})
 
+	count := 0
+
 	// Process all discovered links
 	fmt.Printf("Processing %d discovered pages\n", len(links))
 	for _, link := range links {
@@ -129,6 +131,10 @@ func CollectPages(links []LinkInfo, config *CollectorConfig, tempDir string, dow
 		if err != nil {
 			log.Printf("Error queuing %s: %v", link.URL, err)
 		}
+		if count > 10 {
+			break
+		}
+		count++
 	}
 
 	// Wait for all pages to be processed

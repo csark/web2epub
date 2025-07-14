@@ -68,12 +68,14 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 				}
 			}
 
-			// Store the link with its order
-			links = append(links, LinkInfo{
-				URL:   link,
-				Order: linkOrder,
-			})
-			linkOrder++
+			if !strings.Contains(link, config.LinkFilter) {
+				// Store the link with its order
+				links = append(links, LinkInfo{
+					URL:   link,
+					Order: linkOrder,
+				})
+				linkOrder++
+			}
 		})
 	})
 
@@ -83,7 +85,7 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to visit starting URL: %w", err)
 	}
-	
+
 	linkCollector.Wait()
 
 	return links, bookTitle, nil

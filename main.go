@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"web2epub/collectors"
+
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-shiori/go-epub"
-	"web2epub/collectors"
 )
-
 
 func main() {
 	// Define command line flags
@@ -64,6 +64,14 @@ func main() {
 	if *outputFile != "" {
 		bookTitle = *outputFile
 	}
+
+	// fmt.Printf("Book Title: %s\n", bookTitle)
+	// fmt.Printf("Number of links found: %d\n", len(links))
+	// for i, link := range links {
+	// 	fmt.Printf(" %d. %s (Order: %d)\n", i+1, link.URL, link.Order)
+	// }
+
+	// os.Exit(0)
 
 	// Use the modular collectors to process pages
 	pages, err = collectors.CollectPages(links, config, tempDir, downloadImage)
