@@ -68,11 +68,24 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 				}
 			}
 
+			isSubSection := false
+			oldLink := link
+			if len(config.LinkReplace) > 0 {
+				for _, replacement := range config.LinkReplace {
+					link = strings.ReplaceAll(link, replacement.OldText, replacement.NewText)
+					if oldLink != link && replacement.IsSubSection {
+						isSubSection = true
+					}
+				}
+			}
+
 			if !strings.Contains(link, config.LinkFilter) {
 				// Store the link with its order
+				// link = strings.ReplaceAll(link, "/_contents", "")
 				links = append(links, LinkInfo{
-					URL:   link,
-					Order: linkOrder,
+					URL:          link,
+					Order:        linkOrder,
+					IsSubSection: isSubSection,
 				})
 				linkOrder++
 			}
@@ -87,6 +100,17 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 	}
 
 	linkCollector.Wait()
+
+	// Truncate to 10 links for testing
+	var testLinksList []LinkInfo
+	for _, link := range links {
+		if link.Order < 10 {
+			fmt.Printf("%s\n", link.URL)
+			testLinksList = append(testLinksList, link)
+		}
+	}
+
+	links = testLinksList
 
 	return links, bookTitle, nil
 }

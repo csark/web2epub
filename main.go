@@ -79,30 +79,9 @@ func main() {
 		log.Fatal("Page collection failed:", err)
 	}
 
-	css := `h1 {
-    margin-block-end: 0.33em;
-}
-h3 {
-    margin-block-start: 0;
-    margin-block-end: 0;
-}
-p.author-name, p.author-role {
-    margin-block-start: 0;
-    margin-block-end: 0;
-}
-p {
-    margin-block-start: 0;
-    margin-block-end: 0.75em;
-}
-p.kicker {
-    font-style: italic;
-	margin-block-start: 1em;
-    margin-block-end: 2em;
-}`
-
 	// Write CSS to a file in the temp directory
 	cssPath := path.Join(tempDir, "styles.css")
-	err = os.WriteFile(cssPath, []byte(css), 0644)
+	err = os.WriteFile(cssPath, []byte(config.CollectorCSS), 0644)
 	if err != nil {
 		log.Fatal("Error writing CSS file:", err)
 	}
@@ -123,6 +102,8 @@ p.kicker {
 	// Sort pages by order
 	sortedPages := make([]*collectors.PageContent, len(pages))
 	for _, page := range pages {
+		// fmt.Printf("Current url: %s\n", page.URL)
+		// fmt.Printf("Page number:%d\n", page.Order)
 		sortedPages[page.Order] = page
 	}
 
