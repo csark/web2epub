@@ -93,7 +93,7 @@ func main() {
 	}
 	book.SetTitle(bookTitle)
 	book.SetAuthor("Church of Jesus Christ of Latter-day Saints")
-	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epub", *startURL, time.Now().Format("2006-01-02")))
+	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by csark/web2epub", *startURL, time.Now().Format("2006-01-02")))
 	cssPath, err = book.AddCSS(cssPath, "")
 	if err != nil {
 		log.Fatal("Error adding CSS:", err)
@@ -138,7 +138,13 @@ func main() {
 		content, _ := page.Content.First().Html()
 		contentBuilder.WriteString(content)
 
-		title := fmt.Sprintf("%s - %s", page.Title, page.Author)
+		var title string
+
+		if config.CollectorType == "conference" {
+			title = fmt.Sprintf("%s - %s", page.Title, page.Author)
+		} else {
+			title = page.Title
+		}
 
 		if page.IsSubSection {
 			// log.Printf("Subsection")

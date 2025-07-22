@@ -65,7 +65,8 @@ func CollectPages(links []LinkInfo, config *CollectorConfig, tempDir string, dow
 			author = strings.TrimSpace(author)
 		}
 
-		fmt.Printf("Title: %s, is a subsection: %t\n", title, isSubSection)
+		// Troubshooting
+		// fmt.Printf("Title: %s, is a subsection: %t\n", title, isSubSection)
 
 		// Extract the main content using configured selector
 		var article *goquery.Selection

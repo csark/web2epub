@@ -81,7 +81,6 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 
 			if !strings.Contains(link, config.LinkFilter) {
 				// Store the link with its order
-				// link = strings.ReplaceAll(link, "/_contents", "")
 				links = append(links, LinkInfo{
 					URL:          link,
 					Order:        linkOrder,
@@ -101,16 +100,15 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 
 	linkCollector.Wait()
 
-	// Truncate to 10 links for testing
-	var testLinksList []LinkInfo
-	for _, link := range links {
-		if link.Order < 10 {
-			fmt.Printf("%s\n", link.URL)
-			testLinksList = append(testLinksList, link)
-		}
-	}
-
-	links = testLinksList
+	// Truncate to a specific number of links for testing
+	// var testLinksList []LinkInfo
+	// for _, link := range links {
+	// 	if link.Order < 40 {
+	// 		fmt.Printf("%s\n", link.URL)
+	// 		testLinksList = append(testLinksList, link)
+	// 	}
+	// }
+	// links = testLinksList
 
 	return links, bookTitle, nil
 }

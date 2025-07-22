@@ -65,6 +65,7 @@ func GetGeneralConferenceConfig() *CollectorConfig {
 	return &CollectorConfig{
 		CollectorType:   "conference",
 		LinkSelector:    "a[href].list-tile",
+		LinkFilter:      "sassafrass",
 		TitleSelector:   "title",
 		AuthorSelector:  ".author-name",
 		ContentSelector: "article",
@@ -135,8 +136,8 @@ func GetScripturesConfig() *CollectorConfig {
 		DefaultAuthor:       "",
 		SubSectionThreshold: 30,
 		FallbackToBody:      true,
-		Parallelism:         6,
-		DelaySeconds:        2,
+		Parallelism:         10,
+		DelaySeconds:        5,
 		SkipExtensions: []string{
 			".jpg", ".jpeg", ".png", ".gif",
 			".pdf", ".zip", ".mp3", ".mp4",
@@ -146,6 +147,15 @@ func GetScripturesConfig() *CollectorConfig {
 }
 .study-summary {
     font-style: italic;
+}
+.title-number {
+	display: block;
+    font-size: 1.5em;
+    margin-block-start: 0.83em;
+    margin-block-end: 0.83em;
+    margin-inline-start: 0px;
+    margin-inline-end: 0px;
+    font-weight: bold;
 }`,
 	}
 }
