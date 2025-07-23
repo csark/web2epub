@@ -161,9 +161,11 @@ func GetScripturesConfig() *CollectorConfig {
 }
 
 // GetEnsignConfig returns config for LDS Ensign magazine articles
-func GetEnsignConfig() *CollectorConfig {
+func GetComeFollowMe() *CollectorConfig {
 	return &CollectorConfig{
-		LinkSelector:    "a[href].title-link",
+		CollectorType:   "cfm",
+		LinkSelector:    "a[href].list-tile",
+		LinkFilter:      "sassafrass",
 		TitleSelector:   "title",
 		AuthorSelector:  ".author-name",
 		ContentSelector: "article",
@@ -171,6 +173,10 @@ func GetEnsignConfig() *CollectorConfig {
 			"script", "footer", "iframe", "button",
 			".nav", ".menu", ".sidebar", ".ad", ".ads",
 			".kicker",
+		},
+		UnwrapSelectors: []string{
+			".scripture-ref",
+			".cross-ref",
 		},
 		AuthorReplacements: map[string]string{
 			"By": "",
@@ -194,8 +200,8 @@ func GetConfigByModule(module string) (*CollectorConfig, error) {
 		return GetGeneralConferenceConfig(), nil
 	case "scriptures":
 		return GetScripturesConfig(), nil
-	case "ensign":
-		return GetEnsignConfig(), nil
+	case "cfm":
+		return GetComeFollowMe(), nil
 	default:
 		return nil, fmt.Errorf("unknown module: %s. Available modules: conference, scriptures, ensign", module)
 	}

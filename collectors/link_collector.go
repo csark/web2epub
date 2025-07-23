@@ -101,14 +101,14 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 	linkCollector.Wait()
 
 	// Truncate to a specific number of links for testing
-	// var testLinksList []LinkInfo
-	// for _, link := range links {
-	// 	if link.Order < 40 {
-	// 		fmt.Printf("%s\n", link.URL)
-	// 		testLinksList = append(testLinksList, link)
-	// 	}
-	// }
-	// links = testLinksList
+	var testLinksList []LinkInfo
+	for _, link := range links {
+		if link.Order < 10 {
+			fmt.Printf("%s\n", link.URL)
+			testLinksList = append(testLinksList, link)
+		}
+	}
+	links = testLinksList
 
 	return links, bookTitle, nil
 }
