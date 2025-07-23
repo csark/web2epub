@@ -68,12 +68,26 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 				}
 			}
 
-			// Store the link with its order
-			links = append(links, LinkInfo{
-				URL:   link,
-				Order: linkOrder,
-			})
-			linkOrder++
+			isSubSection := false
+			oldLink := link
+			if len(config.LinkReplace) > 0 {
+				for _, replacement := range config.LinkReplace {
+					link = strings.ReplaceAll(link, replacement.OldText, replacement.NewText)
+					if oldLink != link && replacement.IsSubSection {
+						isSubSection = true
+					}
+				}
+			}
+
+			if !strings.Contains(link, config.LinkFilter) {
+				// Store the link with its order
+				links = append(links, LinkInfo{
+					URL:          link,
+					Order:        linkOrder,
+					IsSubSection: isSubSection,
+				})
+				linkOrder++
+			}
 		})
 	})
 
@@ -83,8 +97,18 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 	if err != nil {
 		return nil, "", fmt.Errorf("failed to visit starting URL: %w", err)
 	}
-	
+
 	linkCollector.Wait()
+
+	// Truncate to a specific number of links for testing
+	var testLinksList []LinkInfo
+	for _, link := range links {
+		if link.Order < 10 {
+			fmt.Printf("%s\n", link.URL)
+			testLinksList = append(testLinksList, link)
+		}
+	}
+	links = testLinksList
 
 	return links, bookTitle, nil
 }

@@ -14,11 +14,11 @@ import (
 	"strings"
 	"time"
 
+	"web2epub/collectors"
+
 	"github.com/PuerkitoBio/goquery"
 	"github.com/go-shiori/go-epub"
-	"web2epub/collectors"
 )
-
 
 func main() {
 	// Define command line flags
@@ -65,36 +65,23 @@ func main() {
 		bookTitle = *outputFile
 	}
 
+	// fmt.Printf("Book Title: %s\n", bookTitle)
+	// fmt.Printf("Number of links found: %d\n", len(links))
+	// for i, link := range links {
+	// 	fmt.Printf(" %d. %s (Order: %d)\n", i+1, link.URL, link.Order)
+	// }
+
+	// os.Exit(0)
+
 	// Use the modular collectors to process pages
 	pages, err = collectors.CollectPages(links, config, tempDir, downloadImage)
 	if err != nil {
 		log.Fatal("Page collection failed:", err)
 	}
 
-	css := `h1 {
-    margin-block-end: 0.33em;
-}
-h3 {
-    margin-block-start: 0;
-    margin-block-end: 0;
-}
-p.author-name, p.author-role {
-    margin-block-start: 0;
-    margin-block-end: 0;
-}
-p {
-    margin-block-start: 0;
-    margin-block-end: 0.75em;
-}
-p.kicker {
-    font-style: italic;
-	margin-block-start: 1em;
-    margin-block-end: 2em;
-}`
-
 	// Write CSS to a file in the temp directory
 	cssPath := path.Join(tempDir, "styles.css")
-	err = os.WriteFile(cssPath, []byte(css), 0644)
+	err = os.WriteFile(cssPath, []byte(config.CollectorCSS), 0644)
 	if err != nil {
 		log.Fatal("Error writing CSS file:", err)
 	}
@@ -106,7 +93,7 @@ p.kicker {
 	}
 	book.SetTitle(bookTitle)
 	book.SetAuthor("Church of Jesus Christ of Latter-day Saints")
-	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by casrk/web2epub", *startURL, time.Now().Format("2006-01-02")))
+	book.SetDescription(fmt.Sprintf("Content crawled from %s on %s by csark/web2epub", *startURL, time.Now().Format("2006-01-02")))
 	cssPath, err = book.AddCSS(cssPath, "")
 	if err != nil {
 		log.Fatal("Error adding CSS:", err)
@@ -115,6 +102,8 @@ p.kicker {
 	// Sort pages by order
 	sortedPages := make([]*collectors.PageContent, len(pages))
 	for _, page := range pages {
+		// fmt.Printf("Current url: %s\n", page.URL)
+		// fmt.Printf("Page number:%d\n", page.Order)
 		sortedPages[page.Order] = page
 	}
 
@@ -149,7 +138,13 @@ p.kicker {
 		content, _ := page.Content.First().Html()
 		contentBuilder.WriteString(content)
 
-		title := fmt.Sprintf("%s - %s", page.Title, page.Author)
+		var title string
+
+		if config.CollectorType == "conference" {
+			title = fmt.Sprintf("%s - %s", page.Title, page.Author)
+		} else {
+			title = page.Title
+		}
 
 		if page.IsSubSection {
 			// log.Printf("Subsection")

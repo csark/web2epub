@@ -33,11 +33,18 @@ func CollectPages(links []LinkInfo, config *CollectorConfig, tempDir string, dow
 
 		// Find the order of this page in our links list
 		var pageOrder int
+		found := false
+		isSubSection := false
 		for _, link := range links {
 			if link.URL == pageURL {
 				pageOrder = link.Order
+				isSubSection = link.IsSubSection
+				found = true
 				break
 			}
+		}
+		if !found {
+			log.Printf("WARNING: Could not find order for URL: %s", pageURL)
 		}
 
 		// Extract the title
@@ -58,10 +65,17 @@ func CollectPages(links []LinkInfo, config *CollectorConfig, tempDir string, dow
 			author = strings.TrimSpace(author)
 		}
 
+		// Troubshooting
+		// fmt.Printf("Title: %s, is a subsection: %t\n", title, isSubSection)
+
 		// Extract the main content using configured selector
 		var article *goquery.Selection
 		content := e.DOM.Find(config.ContentSelector)
-		if content.Length() > 0 {
+		if config.CollectorType == "scriptures" && isSubSection {
+			article = content
+			newBody := fmt.Sprintf(`<h1>%s</h1>`, title)
+			article.SetHtml(newBody)
+		} else if content.Length() > 0 {
 			article = content
 			// Remove unwanted elements from article content
 			for _, selector := range config.RemoveSelectors {
@@ -82,8 +96,16 @@ func CollectPages(links []LinkInfo, config *CollectorConfig, tempDir string, dow
 			return
 		}
 
+		// Unwrap specified tags
+		for _, selector := range config.UnwrapSelectors {
+			article.Find(selector).Each(func(i int, s *goquery.Selection) {
+				// fmt.Printf("Selected text: %s\n", s.Text())
+				s.ReplaceWithHtml(s.Text())
+			})
+		}
+
 		// Determine if this is a subsection based on content length
-		isSubSection := true
+		isSubSection = true
 		contentLength := len(article.Text())
 		if contentLength < config.SubSectionThreshold {
 			isSubSection = false
