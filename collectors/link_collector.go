@@ -8,6 +8,8 @@ import (
 
 	"github.com/PuerkitoBio/goquery"
 	"github.com/gocolly/colly/v2"
+	"golang.org/x/text/cases"
+	"golang.org/x/text/language"
 )
 
 // CollectLinks discovers and returns all links from a starting URL using the provided config
@@ -33,7 +35,8 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 		// Extract book title
 		title := e.DOM.Find(config.TitleSelector).Text()
 		if title != "" {
-			bookTitle = title
+			caser := cases.Title(language.English)
+			bookTitle = caser.String(title)
 		}
 
 		// Find and collect all links on the page using the configured selector
@@ -101,14 +104,14 @@ func CollectLinks(startURL string, config *CollectorConfig, sameHostOnly bool) (
 	linkCollector.Wait()
 
 	// Truncate to a specific number of links for testing
-	var testLinksList []LinkInfo
-	for _, link := range links {
-		if link.Order < 10 {
-			fmt.Printf("%s\n", link.URL)
-			testLinksList = append(testLinksList, link)
-		}
-	}
-	links = testLinksList
+	// var testLinksList []LinkInfo
+	// for _, link := range links {
+	// 	if link.Order < 10 {
+	// 		fmt.Printf("%s\n", link.URL)
+	// 		testLinksList = append(testLinksList, link)
+	// 	}
+	// }
+	// links = testLinksList
 
 	return links, bookTitle, nil
 }
